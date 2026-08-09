@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Fraud Alert Assistant</title>
+<style>
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    max-width: 650px;
+    margin: 40px auto;
+    padding: 20px;
+    background: #f7f8fa;
+  }
+  h2 { color: #1a1a2e; }
+  h3 { color: #333; font-size: 16px; margin-top: 0; }
+  .card {
+    background: white;
+    padding: 25px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    margin-bottom: 20px;
+  }
+  label {
+    display: block;
+    margin-top: 12px;
+    font-weight: 600;
+    font-size: 14px;
+    color: #333;
+  }
+  input {
+    width: 100%;
+    padding: 10px;
+    margin-top: 5px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    box-sizing: border-box;
+    font-size: 14px;
+  }
+  button {
+    margin-top: 20px;
+    width: 100%;
+    padding: 12px;
+    background: #4f46e5;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  button:hover { background: #4338ca; }
+  button:disabled { background: #999; cursor: not-allowed; }
+  .secondary-btn { background: #e5e7eb; color: #333; }
+  .secondary-btn:hover { background: #d1d5db; }
+
+  #history-list { margin-top: 15px; font-size: 13px; color: #555; }
+  .history-item { padding: 8px; border-bottom: 1px solid #eee; }
+
+  #result {
+    display: none;
+    padding: 20px;
+    border-radius: 12px;
+    white-space: pre-wrap;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .risk-low { background: #dcfce7; border-left: 5px solid #22c55e; }
+  .risk-medium { background: #fef9c3; border-left: 5px solid #eab308; }
+  .risk-high { background: #fee2e2; border-left: 5px solid #ef4444; }
+  .risk-unknown { background: #f3f4f6; border-left: 5px solid #9ca3af; }
+</style>
+</head>
+<body>
+
+<h2>🔍 Fraud Alert Assistant</h2>
+<p>The AI compares each new transaction against this user's past spending pattern — not just judged alone.</p>
+
+<div class="card">
+  <h3>📜 Past Transaction History (used as context)</h3>
+  <div id="history-list"></div>
+
+  <label>Add another past transaction (optional)</label>
+  <input type="text" id="histAmount" placeholder="Amount e.g. 600">
+  <input type="text" id="histMerchant" placeholder="Merchant e.g. Zomato" style="margin-top:8px;">
+  <input type="text" id="histLocation" placeholder="Location e.g. Pune, India" style="margin-top:8px;">
+  <input type="text" id="histTime" placeholder="Time e.g. 1:00 PM" style="margin-top:8px;">
+  <button class="secondary-btn" id="addHistBtn">+ Add to History</button>
+</div>
+
+<div class="card">
+  <h3>🆕 New Transaction to Check</h3>
+  <label>Amount (₹)</label>
+  <input type="number" id="amount" placeholder="e.g. 4500">
+
+  <label>Merchant Name</label>
+  <input type="text" id="merchant" placeholder="e.g. Amazon, Unknown Store XYZ">
+
+  <label>Location</label>
+  <input type="text" id="location" placeholder="e.g. Pune, India">
+
+  <label>Time of Transaction</label>
+  <input type="text" id="time" placeholder="e.g. 3:45 AM or 2:00 PM">
+
+  <button id="checkBtn">Check Transaction</button>
+</div>
+
+<div id="result"></div>
+
+<script>
+  let history = [
+    { amount: 450, merchant: "Zomato", location: "Pune, India", time: "1:15 PM" },
+    { amount: 1200, merchant: "Amazon", location: "Pune, India", time: "6:30 PM" },
+    { amount: 800, merchant: "Big Bazaar", location: "Pune, India", time: "11:00 AM" },
+    { amount: 300, merchant: "Uber", location: "Pune, India", time: "9:00 PM" }
+  ];
+
+  function renderHistory() {
+    const listDiv = document.getElementById("history-list");
+    listDiv.innerHTML = history.map(t =>
+      `<div class="history-item">₹${t.amount} — ${t.merchant} — ${t.location} — ${t.time}</div>`
+    ).join("");
+  }
+  renderHistory();
+
+  document.getElementById("addHistBtn").addEventListener("click", () => {
+    const amount = document.getElementById("histAmount").value;
+    const merchant = document.getElementById("histMerchant").value;
+    const location = document.getElementById("histLocation").value;
+    const time = document.getElementById("histTime").value;
+
+    if (!amount || !merchant || !location || !time) {
+      alert("Fill all history fields to add one.");
+      return;
+    }
+
+    history.push({ amount, merchant, location, time });
+    renderHistory();
+
+    document.getElementById("histAmount").value = "";
+    document.getElementById("histMerchant").value = "";
+    document.getElementById("histLocation").value = "";
+    document.getElementById("histTime").value = "";
+  });
+
+  document.getElementById("checkBtn").addEventListener("click", async () => {
+    const amount = document.getElementById("amount").value;
+    const merchant = document.getElementById("merchant").value;
+    const location = document.getElementById("location").value;
+    const time = document.getElementById("time").value;
+    const resultDiv = document.getElementById("result");
+    const btn = document.getElementById("checkBtn");
+
+    if (!amount || !merchant || !location || !time) {
+      alert("Please fill in all fields.");
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = "Analyzing...";
+    resultDiv.style.display = "block";
+    resultDiv.className = "";
+    resultDiv.textContent = "Analyzing transaction against user history, please wait...";
+
+    try {
+      const response = await fetch("/api/check-fraud", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount, merchant, location, time, history })
+      });
+
+      const data = await response.json();
+
+      if (data.text) {
+        const text = data.text;
+        let riskClass = "risk-unknown";
+        if (/RISK:\s*Low/i.test(text)) riskClass = "risk-low";
+        else if (/RISK:\s*Medium/i.test(text)) riskClass = "risk-medium";
+        else if (/RISK:\s*High/i.test(text)) riskClass = "risk-high";
+
+        resultDiv.className = riskClass;
+        resultDiv.textContent = text;
+      } else {
+        resultDiv.className = "risk-unknown";
+        resultDiv.textContent = "Error: " + JSON.stringify(data);
+      }
+    } catch (err) {
+      resultDiv.className = "risk-unknown";
+      resultDiv.textContent = "Something went wrong: " + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Check Transaction";
+    }
+  });
+</script>
+
+</body>
+</html>
