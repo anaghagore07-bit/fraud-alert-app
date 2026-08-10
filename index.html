@@ -51,6 +51,17 @@
   button:disabled { background: #999; cursor: not-allowed; }
   .secondary-btn { background: #e5e7eb; color: #333; }
   .secondary-btn:hover { background: #d1d5db; }
+  .fp-btn {
+    margin-top: 12px;
+    width: auto;
+    padding: 8px 16px;
+    background: white;
+    color: #4f46e5;
+    border: 1.5px solid #4f46e5;
+    font-size: 13px;
+  }
+  .fp-btn:hover { background: #eef2ff; }
+  .fp-btn:disabled { background: #f3f4f6; color: #999; border-color: #ccc; }
 
   #history-list { margin-top: 15px; font-size: 13px; color: #555; }
   .history-item { padding: 8px; border-bottom: 1px solid #eee; }
@@ -67,6 +78,23 @@
   .risk-medium { background: #fef9c3; border-left: 5px solid #eab308; }
   .risk-high { background: #fee2e2; border-left: 5px solid #ef4444; }
   .risk-unknown { background: #f3f4f6; border-left: 5px solid #9ca3af; }
+
+  #review-card { display: none; }
+  .review-item {
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+    font-size: 13px;
+  }
+  .review-item .tag {
+    display: inline-block;
+    background: #eef2ff;
+    color: #4f46e5;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 6px;
+  }
 </style>
 </head>
 <body>
@@ -104,6 +132,13 @@
 </div>
 
 <div id="result"></div>
+<button class="fp-btn" id="fpBtn" style="display:none;">🚩 Mark as False Positive (this was actually legit)</button>
+
+<div class="card" id="review-card">
+  <h3>🛠️ Flagged for Review (False Positives)</h3>
+  <p style="font-size:13px; color:#666; margin-top:-8px;">Transactions the AI flagged as risky but were confirmed to be legitimate — this feedback would be used to improve the system over time.</p>
+  <div id="review-list"></div>
+</div>
 
 <script>
   let history = [
@@ -113,6 +148,9 @@
     { amount: 300, merchant: "Uber", location: "Pune, India", time: "9:00 PM" }
   ];
 
+  let lastChecked = null; // holds the most recently checked transaction + result
+  let reviewLog = [];
+
   function renderHistory() {
     const listDiv = document.getElementById("history-list");
     listDiv.innerHTML = history.map(t =>
@@ -120,6 +158,20 @@
     ).join("");
   }
   renderHistory();
+
+  function renderReviewLog() {
+    const card = document.getElementById("review-card");
+    const listDiv = document.getElementById("review-list");
+    if (reviewLog.length === 0) {
+      card.style.display = "none";
+      return;
+    }
+    card.style.display = "block";
+    listDiv.innerHTML = reviewLog.map(item =>
+      `<div class="review-item">₹${item.amount} — ${item.merchant} — ${item.location} — ${item.time}
+        <span class="tag">was: ${item.originalRisk}</span></div>`
+    ).join("");
+  }
 
   document.getElementById("addHistBtn").addEventListener("click", () => {
     const amount = document.getElementById("histAmount").value;
@@ -148,6 +200,7 @@
     const time = document.getElementById("time").value;
     const resultDiv = document.getElementById("result");
     const btn = document.getElementById("checkBtn");
+    const fpBtn = document.getElementById("fpBtn");
 
     if (!amount || !merchant || !location || !time) {
       alert("Please fill in all fields.");
@@ -159,6 +212,7 @@
     resultDiv.style.display = "block";
     resultDiv.className = "";
     resultDiv.textContent = "Analyzing transaction against user history, please wait...";
+    fpBtn.style.display = "none";
 
     try {
       const response = await fetch("/api/check-fraud", {
@@ -172,12 +226,22 @@
       if (data.text) {
         const text = data.text;
         let riskClass = "risk-unknown";
-        if (/RISK:\s*Low/i.test(text)) riskClass = "risk-low";
-        else if (/RISK:\s*Medium/i.test(text)) riskClass = "risk-medium";
-        else if (/RISK:\s*High/i.test(text)) riskClass = "risk-high";
+        let riskLabel = "Unknown";
+        if (/RISK:\s*Low/i.test(text)) { riskClass = "risk-low"; riskLabel = "Low"; }
+        else if (/RISK:\s*Medium/i.test(text)) { riskClass = "risk-medium"; riskLabel = "Medium"; }
+        else if (/RISK:\s*High/i.test(text)) { riskClass = "risk-high"; riskLabel = "High"; }
 
         resultDiv.className = riskClass;
         resultDiv.textContent = text;
+
+        lastChecked = { amount, merchant, location, time, originalRisk: riskLabel };
+
+        // Only show the false-positive button if it was flagged Medium or High
+        if (riskLabel === "Medium" || riskLabel === "High") {
+          fpBtn.style.display = "block";
+          fpBtn.disabled = false;
+          fpBtn.textContent = "🚩 Mark as False Positive (this was actually legit)";
+        }
       } else {
         resultDiv.className = "risk-unknown";
         resultDiv.textContent = "Error: " + JSON.stringify(data);
@@ -189,6 +253,16 @@
       btn.disabled = false;
       btn.textContent = "Check Transaction";
     }
+  });
+
+  document.getElementById("fpBtn").addEventListener("click", () => {
+    if (!lastChecked) return;
+    reviewLog.push(lastChecked);
+    renderReviewLog();
+
+    const fpBtn = document.getElementById("fpBtn");
+    fpBtn.disabled = true;
+    fpBtn.textContent = "✓ Logged for review";
   });
 </script>
 
